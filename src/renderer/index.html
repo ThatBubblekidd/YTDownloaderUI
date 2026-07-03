@@ -24,7 +24,7 @@
           <input id="browserInput" type="search" placeholder="Search YouTube or paste a video URL" autocomplete="off" />
           <button type="submit" id="goButton">Go</button>
         </form>
-        <div class="settings-grid">
+        <div class="quick-settings">
           <label>
             Download folder
             <div class="folder-row">
@@ -32,11 +32,14 @@
               <button type="button" id="pickFolderButton">Choose</button>
             </div>
           </label>
+        </div>
+        <details class="advanced-settings">
+          <summary>Advanced</summary>
           <label>
             yt-dlp path
             <input id="ytDlpPath" placeholder="/opt/homebrew/bin/yt-dlp" />
           </label>
-        </div>
+        </details>
       </section>
 
       <div class="offline-banner hidden" id="offlineBanner">Please connect to the internet to use this app. YouTube browsing and new downloads need an online connection.</div>
@@ -80,7 +83,7 @@
               YouTube access
               <select id="authMode">
                 <option value="none">Public videos, no login</option>
-                <option value="app">Use this app's YouTube login</option>
+                <option value="app" selected>Use this app's YouTube login</option>
                 <option value="browser">Use browser cookies</option>
                 <option value="file">Use cookies.txt file</option>
               </select>
@@ -149,6 +152,8 @@
           </div>
         </aside>
       </main>
+
+      <div class="toast-stack" id="toastStack" aria-live="polite"></div>
     </div>
 
     <script src="./renderer.js"></script>

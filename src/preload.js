@@ -13,4 +13,5 @@ contextBridge.exposeInMainWorld('ytApp', {
   onLog: (callback) => ipcRenderer.on('download:log', (_event, payload) => callback(payload)),
   onComplete: (callback) => ipcRenderer.on('download:complete', (_event, payload) => callback(payload)),
   onError: (callback) => ipcRenderer.on('download:error', (_event, payload) => callback(payload)),
+  onCancelled: (callback) => ipcRenderer.on('download:cancelled', (_event, payload) => callback(payload)),
 });

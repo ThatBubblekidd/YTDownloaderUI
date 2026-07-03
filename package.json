@@ -1,6 +1,6 @@
 {
   "name": "yt-downloader-ui",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A polished macOS desktop wrapper for searching YouTube and downloading permitted media with yt-dlp.",
   "main": "src/main.js",
   "scripts": {

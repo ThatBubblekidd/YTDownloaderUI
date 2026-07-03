@@ -24,6 +24,7 @@ const els = {
   offlineBanner: document.querySelector('#offlineBanner'),
   errorBanner: document.querySelector('#errorBanner'),
   ffmpegNotice: document.querySelector('#ffmpegNotice'),
+  toastStack: document.querySelector('#toastStack'),
   queueCount: document.querySelector('#queueCount'),
   queueList: document.querySelector('#queueList'),
   downloadDir: document.querySelector('#downloadDir'),
@@ -53,6 +54,7 @@ function loadSettings() {
   if (saved.downloadDir) els.downloadDir.value = saved.downloadDir;
   if (saved.ytDlpPath) els.ytDlpPath.value = saved.ytDlpPath;
   if (saved.authMode) els.authMode.value = saved.authMode;
+  else els.authMode.value = 'app';
   if (saved.cookiesBrowser) els.cookiesBrowser.value = saved.cookiesBrowser;
   if (saved.cookiesFile) els.cookiesFile.value = saved.cookiesFile;
   updateAuthFields();
@@ -100,6 +102,36 @@ function showError(message) {
 function clearError() {
   els.errorBanner.textContent = '';
   els.errorBanner.classList.add('hidden');
+}
+
+function showToast(title, message = '', type = 'info') {
+  const toast = document.createElement('div');
+  toast.className = `toast ${type}`;
+  toast.innerHTML = `
+    <strong>${escapeHtml(title)}</strong>
+    ${message ? `<span>${escapeHtml(message)}</span>` : ''}
+  `;
+  els.toastStack.appendChild(toast);
+  window.setTimeout(() => {
+    toast.classList.add('leaving');
+    window.setTimeout(() => toast.remove(), 250);
+  }, 3600);
+}
+
+function cssEscape(value) {
+  if (window.CSS?.escape) return window.CSS.escape(value);
+  return String(value).replace(/["\\]/g, '\\$&');
+}
+
+function queueMeta(item) {
+  const details = [];
+  if (Number.isFinite(item.percent) && item.percent > 0 && item.percent < 100) details.push(`${Math.round(item.percent)}%`);
+  if (item.error) details.push(item.error);
+  return details.join(' · ');
+}
+
+function isFinishedStatus(status) {
+  return ['Complete', 'Failed', 'Cancelled'].includes(status);
 }
 
 function updateAuthFields() {
@@ -241,13 +273,18 @@ function renderQueue() {
   for (const item of entries) {
     const row = document.createElement('div');
     row.className = 'queue-item';
+    row.dataset.queueId = item.id;
+    const meta = queueMeta(item);
+    const finished = isFinishedStatus(item.status);
     row.innerHTML = `
       <div class="queue-title">${escapeHtml(item.title)}</div>
       <div class="queue-status">${escapeHtml(item.status)}</div>
+      ${meta ? `<div class="queue-meta">${escapeHtml(meta)}</div>` : ''}
       <div class="progress-track"><div style="width:${item.percent || 0}%"></div></div>
       <div class="queue-actions">
-        <button data-cancel="${escapeHtml(item.id)}" ${['Complete', 'Failed', 'Cancelled'].includes(item.status) ? 'disabled' : ''}>Cancel</button>
+        ${finished ? '' : `<button data-cancel="${escapeHtml(item.id)}" ${item.status === 'Cancelling...' ? 'disabled' : ''}>Cancel</button>`}
         <button data-reveal="${escapeHtml(item.destination || '')}">Reveal</button>
+        ${finished ? `<button data-clear="${escapeHtml(item.id)}">Clear</button>` : ''}
       </div>
     `;
     els.queueList.appendChild(row);
@@ -256,16 +293,27 @@ function renderQueue() {
 
 async function startDownloadFromCurrentVideo() {
   clearError();
+  const previousButtonText = els.downloadCurrentButton.textContent;
+  els.downloadCurrentButton.disabled = true;
+  els.downloadCurrentButton.textContent = 'Adding...';
   await refreshStatus();
   if (!state.online) {
     showError('Please connect to the internet before starting a download.');
+    els.downloadCurrentButton.textContent = previousButtonText;
+    updateCurrentVideoUi();
     return;
   }
   if (!state.ytDlpOk) {
     showError('yt-dlp could not be started. Check the bundled app files or choose a yt-dlp path.');
+    els.downloadCurrentButton.textContent = previousButtonText;
+    updateCurrentVideoUi();
     return;
   }
-  if (!isYouTubeVideoUrl(state.currentUrl)) return;
+  if (!isYouTubeVideoUrl(state.currentUrl)) {
+    els.downloadCurrentButton.textContent = previousButtonText;
+    updateCurrentVideoUi();
+    return;
+  }
 
   const cleanUrl = cleanVideoUrl(state.currentUrl);
   const id = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -286,10 +334,14 @@ async function startDownloadFromCurrentVideo() {
     destination: els.downloadDir.value,
   });
   renderQueue();
+  showToast('Download added', 'Preparing the file now.');
+  window.requestAnimationFrame(() => {
+    document.querySelector(`[data-queue-id="${cssEscape(id)}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  });
 
   try {
     const response = await window.ytApp.download({ ...settingsPayload(), id, url: cleanUrl, settings });
-    if (!response.started) throw new Error(response.error || 'Download could not start.');
+    if (!response.started && !response.cancelled) throw new Error(response.error || 'Download could not start.');
   } catch (error) {
     const queued = state.queue.get(id);
     if (queued) {
@@ -298,6 +350,9 @@ async function startDownloadFromCurrentVideo() {
     }
     showError(error.message || 'Download could not start.');
     renderQueue();
+  } finally {
+    els.downloadCurrentButton.textContent = previousButtonText;
+    updateCurrentVideoUi();
   }
 }
 
@@ -388,14 +443,25 @@ els.downloadKind.addEventListener('change', updateKindFields);
 els.queueList.addEventListener('click', async (event) => {
   const cancelButton = event.target.closest('[data-cancel]');
   if (cancelButton) {
-    await window.ytApp.cancelDownload(cancelButton.dataset.cancel);
     const item = state.queue.get(cancelButton.dataset.cancel);
-    if (item) item.status = 'Cancelled';
+    if (item) item.status = 'Cancelling...';
     renderQueue();
+    const cancelled = await window.ytApp.cancelDownload(cancelButton.dataset.cancel);
+    if (!cancelled) {
+      if (item) item.status = 'Complete';
+      showToast('Could not cancel', 'The download may have already finished.', 'warning');
+      renderQueue();
+    }
   }
 
   const revealButton = event.target.closest('[data-reveal]');
   if (revealButton) await window.ytApp.reveal(revealButton.dataset.reveal);
+
+  const clearButton = event.target.closest('[data-clear]');
+  if (clearButton) {
+    state.queue.delete(clearButton.dataset.clear);
+    renderQueue();
+  }
 });
 
 window.addEventListener('online', () => {
@@ -416,6 +482,9 @@ window.ytApp.onProgress((payload) => {
   else item.status = 'Downloading file...';
   if (payload.percent !== null && payload.percent !== undefined) item.percent = payload.percent;
   if (payload.destination) item.destination = payload.destination;
+  if (payload.speed) item.speed = payload.speed;
+  if (payload.eta) item.eta = payload.eta;
+  if (payload.totalSize) item.totalSize = payload.totalSize;
   renderQueue();
 });
 
@@ -425,6 +494,9 @@ window.ytApp.onComplete(({ id }) => {
   item.status = 'Complete';
   item.percent = 100;
   item.error = '';
+  item.speed = '';
+  item.eta = '';
+  showToast('Download complete', item.title);
   renderQueue();
 });
 
@@ -434,6 +506,17 @@ window.ytApp.onError(({ id, message }) => {
   item.status = 'Failed';
   item.error = message;
   showError(message);
+  showToast('Download failed', message, 'error');
+  renderQueue();
+});
+window.ytApp.onCancelled(({ id }) => {
+  const item = state.queue.get(id);
+  if (!item) return;
+  item.status = 'Cancelled';
+  item.speed = '';
+  item.eta = '';
+  item.error = '';
+  showToast('Download cancelled', item.title);
   renderQueue();
 });
 

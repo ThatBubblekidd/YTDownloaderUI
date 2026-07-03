@@ -149,6 +149,7 @@ function runCommand(binary, args, options = {}) {
   return new Promise((resolve, reject) => {
     const child = spawn(binary, args, {
       cwd: options.cwd || DEFAULT_DOWNLOAD_DIR,
+      detached: Boolean(options.detached),
       env: {
         ...process.env,
         PATH: [
@@ -256,6 +257,18 @@ function removeTempFile(filePath) {
   fs.rm(filePath, { force: true }, () => {});
 }
 
+function userFacingError(error, payload = {}) {
+  const message = error?.message || String(error || '');
+  if (/could not find .* cookies database/i.test(message) || /could not find chrome cookies database/i.test(message)) {
+    const browser = payload.cookiesBrowser || 'selected browser';
+    return `Could not read ${browser} cookies on this Mac. Sign in inside the app's YouTube browser and choose "Use this app's YouTube login", or choose a cookies.txt file.`;
+  }
+  if (/No YouTube login cookies were found/i.test(message)) {
+    return 'No YouTube login was found in this app yet. Sign in inside the YouTube browser, then try again.';
+  }
+  return message;
+}
+
 function parseJsonLines(output) {
   const entries = [];
   for (const line of output.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)) {
@@ -313,12 +326,14 @@ function parseProgress(line) {
   const progress = line.match(/\[download\]\s+([\d.]+)%/);
   const speed = line.match(/at\s+([^\s]+\/s)/);
   const eta = line.match(/ETA\s+([^\s]+)/);
+  const totalSize = line.match(/\bof\s+~?\s*([0-9.]+\s*(?:KiB|MiB|GiB|TiB|KB|MB|GB|TB|B))/i);
   const destination = line.match(/\[download\]\s+Destination:\s+(.+)/);
   const merged = line.match(/\[Merger\]\s+Merging formats into "(.+)"/);
   return {
     percent: progress ? Number(progress[1]) : null,
     speed: speed?.[1] || '',
     eta: eta?.[1] || '',
+    totalSize: totalSize?.[1]?.replace(/\s+/g, ' ') || '',
     destination: destination?.[1] || merged?.[1] || '',
   };
 }
@@ -451,6 +466,7 @@ ipcMain.handle('app:download', async (_event, payload) => {
   const id = payload.id || `${Date.now()}`;
   const destination = payload.destination || DEFAULT_DOWNLOAD_DIR;
   fs.mkdirSync(destination, { recursive: true });
+  activeDownloads.set(id, { child: null, cancelled: false, tempFile: '' });
 
   const ffmpeg = await resolveWorkingBinary(payload.ffmpegPath, 'ffmpeg', COMMAND_FALLBACKS.ffmpeg, ['-h']);
   const outputTemplate = path.join(destination, '%(title).180B [%(id)s].%(ext)s');
@@ -459,6 +475,14 @@ ipcMain.handle('app:download', async (_event, payload) => {
   try {
     mainWindow?.webContents.send('download:progress', { id, statusLabel: 'Checking YouTube access...', percent: 0 });
     auth = await authArgs({ ...payload, id });
+    const pending = activeDownloads.get(id);
+    if (pending) pending.tempFile = auth.tempFile;
+    if (pending?.cancelled) {
+      removeTempFile(auth.tempFile);
+      activeDownloads.delete(id);
+      mainWindow?.webContents.send('download:cancelled', { id });
+      return { id, started: false, cancelled: true, ffmpegOk: ffmpeg.ok };
+    }
     args = [
       '--newline',
       '--progress',
@@ -480,8 +504,10 @@ ipcMain.handle('app:download', async (_event, payload) => {
     ];
   } catch (error) {
     removeTempFile(auth.tempFile);
-    mainWindow?.webContents.send('download:error', { id, message: error.message });
-    return { id, started: false, ffmpegOk: ffmpeg.ok, error: error.message };
+    activeDownloads.delete(id);
+    const message = userFacingError(error, payload);
+    mainWindow?.webContents.send('download:error', { id, message });
+    return { id, started: false, ffmpegOk: ffmpeg.ok, error: message };
   }
 
   if (payload.settings?.embedMetadata && ffmpeg.ok) {
@@ -493,9 +519,30 @@ ipcMain.handle('app:download', async (_event, payload) => {
   runYtDlp(args, {
     ytDlpPath: payload.ytDlpPath,
     cwd: destination,
+    detached: true,
     onChild: (child) => {
-      activeDownloads.set(id, child);
+      const entry = activeDownloads.get(id) || { cancelled: false, tempFile: auth.tempFile };
+      entry.child = child;
+      entry.tempFile = auth.tempFile;
+      activeDownloads.set(id, entry);
       mainWindow?.webContents.send('download:progress', { id, statusLabel: 'Starting download...', percent: 0 });
+      if (entry.cancelled) {
+        try {
+          process.kill(-child.pid, 'SIGTERM');
+        } catch {
+          child.kill('SIGTERM');
+        }
+        setTimeout(() => {
+          if (!activeDownloads.has(id)) return;
+          try {
+            process.kill(-child.pid, 'SIGKILL');
+          } catch {
+            try {
+              child.kill('SIGKILL');
+            } catch {}
+          }
+        }, 2500);
+      }
     },
     onStdout: (text) => {
       for (const line of text.split(/\r?\n/).filter(Boolean)) {
@@ -514,19 +561,45 @@ ipcMain.handle('app:download', async (_event, payload) => {
       mainWindow?.webContents.send('download:complete', { id });
     })
     .catch((error) => {
+      const entry = activeDownloads.get(id);
       activeDownloads.delete(id);
       removeTempFile(auth.tempFile);
-      mainWindow?.webContents.send('download:error', { id, message: error.message });
+      if (entry?.cancelled) {
+        mainWindow?.webContents.send('download:cancelled', { id });
+        return;
+      }
+      mainWindow?.webContents.send('download:error', { id, message: userFacingError(error, payload) });
     });
 
   return { id, started: true, ffmpegOk: ffmpeg.ok };
 });
 
 ipcMain.handle('app:cancel-download', async (_event, id) => {
-  const child = activeDownloads.get(id);
-  if (!child) return false;
-  child.kill('SIGTERM');
-  activeDownloads.delete(id);
+  const entry = activeDownloads.get(id);
+  if (!entry) return false;
+  entry.cancelled = true;
+  if (!entry.child) {
+    mainWindow?.webContents.send('download:progress', { id, statusLabel: 'Cancelling...', percent: null });
+    return true;
+  }
+  if (entry.child?.pid) {
+    try {
+      process.kill(-entry.child.pid, 'SIGTERM');
+    } catch {
+      entry.child.kill('SIGTERM');
+    }
+    setTimeout(() => {
+      if (!activeDownloads.has(id)) return;
+      try {
+        process.kill(-entry.child.pid, 'SIGKILL');
+      } catch {
+        try {
+          entry.child.kill('SIGKILL');
+        } catch {}
+      }
+    }, 2500);
+  }
+  mainWindow?.webContents.send('download:progress', { id, statusLabel: 'Cancelling...', percent: null });
   return true;
 });
 

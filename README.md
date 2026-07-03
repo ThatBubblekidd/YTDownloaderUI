@@ -8,7 +8,7 @@ Download the app from the latest release:
 
 [YT Downloader UI releases](https://github.com/ThatBubblekidd/YTDownloaderUI/releases/latest)
 
-- Apple Silicon Macs: `YT Downloader UI-1.0.0-arm64.dmg`
-- Intel Macs: `YT Downloader UI-1.0.0.dmg`
+- Apple Silicon Macs: `YT Downloader UI-1.0.1-arm64.dmg`
+- Intel Macs: `YT Downloader UI-1.0.1.dmg`
 
 The app is not notarized yet, so macOS may require right-clicking the app and choosing **Open** the first time.

@@ -14,10 +14,16 @@
   box-sizing: border-box;
 }
 
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   min-width: 0;
-  min-height: 100vh;
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: var(--bg);
   color: var(--text);
@@ -36,9 +42,11 @@ label,
 .queue-item,
 .download-options,
 .current-video,
-.settings-grid,
+.quick-settings,
+.advanced-settings,
 .browser-nav,
 .browser-frame,
+.toast,
 webview,
 .notice,
 .offline-banner,
@@ -91,8 +99,11 @@ label {
 }
 
 .app-shell {
-  min-height: 100vh;
-  padding: 24px;
+  height: 100vh;
+  padding: 34px 24px 24px;
+  display: grid;
+  grid-template-rows: auto auto auto auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .toolbar {
@@ -100,7 +111,7 @@ label {
   align-items: flex-end;
   justify-content: space-between;
   gap: 20px;
-  margin-bottom: 14px;
+  margin-bottom: 12px;
 }
 
 .eyebrow {
@@ -161,8 +172,8 @@ h2 {
 
 .browser-band {
   display: grid;
-  gap: 12px;
-  padding: 14px;
+  gap: 10px;
+  padding: 12px;
 }
 
 .browser-nav {
@@ -184,24 +195,41 @@ h2 {
   font-weight: 700;
 }
 
-.settings-grid {
+.quick-settings {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(190px, 300px);
+  grid-template-columns: minmax(220px, 1fr);
   gap: 10px;
 }
 
 .folder-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 78px;
+  grid-template-columns: minmax(0, 1fr) 92px;
   gap: 8px;
+}
+
+.advanced-settings {
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 10px;
+}
+
+.advanced-settings summary {
+  width: max-content;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 13px;
+  -webkit-app-region: no-drag;
+}
+
+.advanced-settings label {
+  margin-top: 10px;
 }
 
 .offline-banner,
 .error-banner,
 .notice {
-  margin-top: 10px;
+  margin-top: 8px;
   border-radius: 7px;
-  padding: 10px 12px;
+  padding: 9px 12px;
   font-size: 13px;
 }
 
@@ -226,15 +254,22 @@ h2 {
 
 .content-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 340px);
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(350px, 400px);
+  gap: 14px;
   margin-top: 12px;
-  align-items: start;
+  align-items: stretch;
+  min-height: 0;
 }
 
 .browser-pane,
 .queue-pane {
-  min-height: 420px;
+  min-height: 0;
+}
+
+.browser-pane {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .section-heading {
@@ -253,7 +288,7 @@ h2 {
 
 .browser-frame {
   position: relative;
-  height: clamp(340px, calc(100vh - 260px), 680px);
+  height: auto;
   min-height: 0;
   overflow: hidden;
   background: #0c0e11;
@@ -300,10 +335,9 @@ webview {
 }
 
 .queue-pane {
-  position: sticky;
-  top: 12px;
-  max-height: calc(100vh - 48px);
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
 }
 
 .current-video {
@@ -325,8 +359,9 @@ webview {
   font-size: 15px;
   line-height: 1.3;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
 }
 
 .current-video p {
@@ -339,7 +374,11 @@ webview {
 
 #downloadCurrentButton {
   width: 100%;
-  min-height: 42px;
+  min-height: 50px;
+  white-space: normal;
+  line-height: 1.2;
+  text-align: center;
+  padding: 8px 12px;
 }
 
 .download-options {
@@ -381,16 +420,24 @@ webview {
 .queue-title {
   font-size: 14px;
   line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.queue-status {
+.queue-status,
+.queue-meta {
   color: var(--muted);
   font-size: 12px;
   overflow-wrap: anywhere;
 }
 
+.queue-status {
+  color: #d8e0eb;
+}
+
 .progress-track {
-  height: 7px;
+  height: 8px;
   border-radius: 999px;
   background: #0f1216;
   overflow: hidden;
@@ -413,24 +460,85 @@ webview {
   font-size: 12px;
 }
 
+.toast-stack {
+  position: fixed;
+  right: 24px;
+  bottom: 24px;
+  z-index: 20;
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 48px));
+  pointer-events: none;
+  -webkit-app-region: no-drag;
+}
+
+.toast {
+  border: 1px solid rgba(63, 185, 132, 0.38);
+  border-radius: 8px;
+  background: rgba(20, 29, 25, 0.97);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.32);
+  color: var(--text);
+  display: grid;
+  gap: 3px;
+  padding: 12px 14px;
+  opacity: 1;
+  transform: translateY(0);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.toast span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.toast.warning {
+  border-color: rgba(241, 185, 76, 0.42);
+  background: rgba(34, 29, 19, 0.97);
+}
+
+.toast.error {
+  border-color: rgba(255, 107, 107, 0.42);
+  background: rgba(35, 21, 23, 0.97);
+}
+
+.toast.leaving {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
 .hidden {
   display: none !important;
 }
 
 @media (max-width: 1100px) {
+  body {
+    overflow: auto;
+  }
+
+  .app-shell {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
+
   .content-grid {
     grid-template-columns: 1fr;
   }
 
   .queue-pane {
-    position: static;
     max-height: none;
+    overflow: visible;
+  }
+
+  .browser-frame {
+    height: clamp(360px, 64vh, 620px);
   }
 }
 
 @media (max-width: 860px) {
   .app-shell {
-    padding: 18px;
+    padding: 34px 18px 18px;
   }
 
   .toolbar {
@@ -439,7 +547,7 @@ webview {
     gap: 10px;
   }
 
-  .settings-grid {
+  .quick-settings {
     grid-template-columns: 1fr;
   }
 
@@ -453,6 +561,6 @@ webview {
   }
 
   .browser-frame {
-    height: clamp(320px, calc(100vh - 300px), 560px);
+    height: clamp(320px, 62vh, 560px);
   }
 }
