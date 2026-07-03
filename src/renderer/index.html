@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>YT Downloader UI</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="toolbar">
+        <div>
+          <p class="eyebrow">YouTube browser + local yt-dlp downloader</p>
+          <h1>YT Downloader UI</h1>
+        </div>
+        <div class="status-pill" id="statusPill">Checking...</div>
+      </header>
+
+      <section class="browser-band">
+        <form class="browser-nav" id="browserForm">
+          <button type="button" id="backButton" title="Back">‹</button>
+          <button type="button" id="forwardButton" title="Forward">›</button>
+          <button type="button" id="reloadButton" title="Reload">↻</button>
+          <input id="browserInput" type="search" placeholder="Search YouTube or paste a video URL" autocomplete="off" />
+          <button type="submit" id="goButton">Go</button>
+        </form>
+        <div class="settings-grid">
+          <label>
+            Download folder
+            <div class="folder-row">
+              <input id="downloadDir" readonly />
+              <button type="button" id="pickFolderButton">Choose</button>
+            </div>
+          </label>
+          <label>
+            yt-dlp path
+            <input id="ytDlpPath" placeholder="/opt/homebrew/bin/yt-dlp" />
+          </label>
+        </div>
+      </section>
+
+      <div class="offline-banner hidden" id="offlineBanner">Please connect to the internet to use this app. YouTube browsing and new downloads need an online connection.</div>
+      <div class="error-banner hidden" id="errorBanner"></div>
+      <div class="notice" id="ffmpegNotice">Checking ffmpeg. MP3 conversion, thumbnail embedding, and some MP4 merges need ffmpeg.</div>
+      <div class="notice">Download only videos you own, have permission to save, or that are otherwise legal for you to download.</div>
+
+      <main class="content-grid">
+        <section class="browser-pane">
+          <div class="section-heading">
+            <h2>YouTube</h2>
+            <span id="browserStatus">Ready</span>
+          </div>
+          <div class="browser-frame">
+            <webview id="youtubeView" src="https://www.youtube.com" partition="persist:youtube"></webview>
+            <div class="browser-loading hidden" id="browserLoading">Loading YouTube...</div>
+            <div class="browser-offline hidden" id="browserOffline">
+              <img src="./assets/empty-state.png" alt="" />
+              <span>Please connect to the internet to browse YouTube.</span>
+            </div>
+          </div>
+        </section>
+
+        <aside class="queue-pane">
+          <div class="section-heading">
+            <h2>Download</h2>
+            <span id="queueCount">0 active</span>
+          </div>
+
+          <div class="current-video">
+            <div>
+              <span class="field-caption">Current page</span>
+              <strong id="currentVideoTitle">No video selected</strong>
+              <p id="currentVideoUrl">Open a YouTube video or Short in the browser.</p>
+            </div>
+            <button type="button" id="downloadCurrentButton" disabled>Download Current Video</button>
+          </div>
+
+          <div class="download-options">
+            <label>
+              YouTube access
+              <select id="authMode">
+                <option value="none">Public videos, no login</option>
+                <option value="app">Use this app's YouTube login</option>
+                <option value="browser">Use browser cookies</option>
+                <option value="file">Use cookies.txt file</option>
+              </select>
+            </label>
+            <label id="cookiesBrowserLabel" class="hidden">
+              Browser
+              <select id="cookiesBrowser">
+                <option value="chrome">Chrome</option>
+                <option value="safari">Safari</option>
+                <option value="firefox">Firefox</option>
+                <option value="edge">Edge</option>
+                <option value="brave">Brave</option>
+                <option value="chromium">Chromium</option>
+              </select>
+            </label>
+            <label id="cookiesFileLabel" class="hidden">
+              Cookies file
+              <div class="folder-row">
+                <input id="cookiesFile" readonly />
+                <button type="button" id="pickCookiesButton">Choose</button>
+              </div>
+            </label>
+            <div class="auth-note" id="authNote">For age-restricted or bot-check issues, sign in inside the YouTube browser above and choose this app's YouTube login. The built-in browser keeps that YouTube session for next time.</div>
+            <label>
+              Type
+              <select id="downloadKind">
+                <option value="video">Video MP4</option>
+                <option value="audio">Audio only</option>
+              </select>
+            </label>
+            <label id="videoQualityLabel">
+              Video quality
+              <select id="videoQuality">
+                <option value="best">Best</option>
+                <option value="1080">1080p</option>
+                <option value="720">720p</option>
+                <option value="480">480p</option>
+                <option value="360">360p</option>
+              </select>
+            </label>
+            <label id="audioFormatLabel" class="hidden">
+              Audio format
+              <select id="audioFormat">
+                <option value="mp3">MP3</option>
+                <option value="m4a">M4A</option>
+                <option value="native">Best native audio</option>
+              </select>
+            </label>
+            <label id="audioQualityLabel" class="hidden">
+              Audio quality
+              <select id="audioQuality">
+                <option value="best">Best</option>
+                <option value="0">Highest</option>
+                <option value="5">Balanced</option>
+                <option value="9">Smallest</option>
+              </select>
+            </label>
+            <label class="check-row">
+              <input type="checkbox" id="embedMetadata" checked />
+              Embed metadata and thumbnail
+            </label>
+          </div>
+
+          <div class="queue-list" id="queueList">
+            <div class="empty-queue">Downloads you start will appear here.</div>
+          </div>
+        </aside>
+      </main>
+    </div>
+
+    <script src="./renderer.js"></script>
+  </body>
+</html>
